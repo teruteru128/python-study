@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+import sys
 import base64
 from datetime import datetime, timezone, timedelta
 
@@ -26,7 +28,7 @@ def x_90bit_decode(filename):
 
 def x_90bit_encode(epoch_ms):
     """エポックミリ秒から時刻情報を埋め込んだ擬似ファイル名を生成する"""
-    timestamp_ms = epoch_ms - CUSTOM_EPOCH
+    timestamp_ms = int(epoch_ms) - CUSTOM_EPOCH
     
     # 46ビット左シフトして上位に配置（後半46ビットは0で埋まる）
     total_value = timestamp_ms << SHIFT_BITS
@@ -42,6 +44,31 @@ def x_90bit_encode(epoch_ms):
     return b64_str
 
 # テスト実行
-epoch = x_90bit_decode("HMAAAAAAMAEtxeb")
-x_90bit_encode(epoch)
+#epoch = x_90bit_decode("HMH3uSMawAAtyVJ")
+#x_90bit_encode(epoch)
+
+def print_usage():
+    print("使用方法:")
+    print("  1. ファイル名から時刻を解析 (デコード & 検証エンコード)")
+    print("     python3 x_convert.py [ファイル名]")
+    print("  2. エポックミリ秒からファイル名を生成 (エンコード)")
+    print("     python3 x_convert.py -e [エポックミリ秒]")
+
+if __name__ == "__main__":
+    if len(sys.argv) == 2:
+        # 引数が1つの場合：ファイル名デコード
+        arg = sys.argv[1]
+        if arg in ("-h", "--help"):
+            print_usage()
+        else:
+            epoch = x_90bit_decode(arg)
+            x_90bit_encode(epoch)
+
+    elif len(sys.argv) == 3 and sys.argv[1] == "-e":
+        # 引数が2つで -e の場合：エポックミリ秒からエンコード
+        x_90bit_encode(sys.argv[2])
+
+    else:
+        print_usage()
+        sys.exit(1)
 
