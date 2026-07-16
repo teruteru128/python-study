@@ -101,6 +101,18 @@ def upload_proof(cert_content):
 def main():
     init_db()
     
+    tmp_dir = os.environ.get("CM_ECPP_TMPDIR")
+    if tmp_dir:
+        if not os.path.exists(tmp_dir):
+            try:
+                # 中間ディレクトリも含めて一括作成 (mkdir -p と同じ)
+                os.makedirs(tmp_dir, exist_ok=True)
+                print(f"[Info] CM_ECPP_TMPDIR で指定されたディレクトリを作成しました: {tmp_dir}")
+            except Exception as e:
+                print(f"[Warning] ディレクトリ {tmp_dir} の作成に失敗しました: {e}")
+        else:
+            print(f"[Info] CM_ECPP_TMPDIR ディレクトリは既に存在します: {tmp_dir}")
+    
     # コマンドライン引数の解析
     parser = argparse.ArgumentParser(description="Factordb ECPP SQLite3 Automation Script")
     parser.add_argument('--start-num', type=int, help="新規開始時の連番。指定がない場合はDBの続きから自動再開します。")
