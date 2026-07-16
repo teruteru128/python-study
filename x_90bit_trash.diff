@@ -1,0 +1,123 @@
+diff --git a/x_90bit.py b/x_90bit.py
+index 02c3d50..b730edf 100644
+--- a/x_90bit.py
++++ b/x_90bit.py
+@@ -1,47 +1,82 @@
++#!/usr/bin/env python3
++import sys
++import os
+ import base64
+ from datetime import datetime, timezone, timedelta
+
+-# Xのカスタムエポック（変更なし）
+ CUSTOM_EPOCH = 1288834974657
+-# 今回判明した後半の未知のフィールド長
+-SHIFT_BITS = 46
+
+-def x_90bit_decode(filename):
+-    """ファイル名から時刻情報（JST）を取り出す"""
+-    padding = '=' * ((4 - len(filename) % 4) % 4)
+-    raw_bytes = base64.urlsafe_b64decode(filename + padding)
+-    total_value = int.from_bytes(raw_bytes, byteorder='big')
++def x_8char_decode(filename):
++    """先頭8文字だけを使って、高速かつ正確に時刻情報を取り出す"""
++    # 拡張子やパスが含まれている場合は、純粋なファイル名のみを抽出
++    base_name = os.path.splitext(os.path.basename(filename))[0]
+
+-    # 46ビット右シフトして時刻フィールド（上位42ビット）を取り出す
+-    timestamp_ms = total_value >> SHIFT_BITS
+-    epoch_ms = timestamp_ms + CUSTOM_EPOCH
++    # 先頭8文字を切り出し
++    short_str = base_name[:8]
+
+-    dt = datetime.fromtimestamp(epoch_ms / 1000.0, tz=timezone.utc)
+-    dt_jst = dt.astimezone(timezone(timedelta(hours=9)))
+-
+-    print(f"--- デコード結果 ---")
+-    print(f"エポックミリ秒: {epoch_ms}")
+-    print(f"アップロード日時: {dt_jst.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]} (JST)")
+-    return epoch_ms
++    try:
++        # 8文字（6バイト）をデコードして整数化
++        raw_bytes = base64.urlsafe_b64decode(short_str)
++        val = int.from_bytes(raw_bytes, byteorder='big')
++
++        # 48ビットから上位42ビット（時刻）を抽出するため2ビット右シフト
++        timestamp_ms = val >> 2
++        epoch_ms = timestamp_ms + CUSTOM_EPOCH
++
++        dt = datetime.fromtimestamp(epoch_ms / 1000.0, tz=timezone.utc)
++        dt_jst = dt.astimezone(timezone(timedelta(hours=9)))
++
++        print(f"--- デコード結果 ({base_name}) ---")
++        print(f"エポックミリ秒: {epoch_ms}")
++        print(f"アップロード日時: {dt_jst.strftime('%Y-%m-%d %H:%M:%S.%3N')} (JST)")
++        return epoch_ms
++    except Exception as e:
++        print(f"エラー: デコードに失敗しました。不正な文字列です。({e})")
++        sys.exit(1)
+
+ def x_90bit_encode(epoch_ms):
+-    """エポックミリ秒から時刻情報を埋め込んだ擬似ファイル名を生成する"""
+-    timestamp_ms = epoch_ms - CUSTOM_EPOCH
+-
+-    # 46ビット左シフトして上位に配置（後半46ビットは0で埋まる）
+-    total_value = timestamp_ms << SHIFT_BITS
+-
+-    # 11バイト（88ビット）のバイナリに変換
+-    raw_bytes = total_value.to_bytes(11, byteorder='big')
+-
+-    # URLセーフBase64エンコード（パディング無し）
+-    b64_str = base64.urlsafe_b64encode(raw_bytes).decode('utf-8').rstrip('=')
+-
+-    print(f"--- エンコード結果 ---")
+-    print(f"生成されたファイル名: {b64_str}")
+-    return b64_str
++    """エポックミリ秒から時刻情報を埋め込んだ15文字の擬似ファイル名を生成する"""
++    try:
++        timestamp_ms = int(epoch_ms) - CUSTOM_EPOCH
++
++        # 後半の未知のフィールド長(46ビット)分、左シフトして上位に配置
++        total_value = timestamp_ms << 46
++
++        # 11バイト（88ビット）のバイナリに変換
++        raw_bytes = total_value.to_bytes(11, byteorder='big')
++
++        # URLセーフBase64エンコード（パディング無し）
++        b64_str = base64.urlsafe_b64encode(raw_bytes).decode('utf-8').rstrip('=')
++
++        print(f"--- エンコード結果 ---")
++        print(f"生成されたファイル名: {b64_str}")
++        return b64_str
++    except Exception as e:
++        print(f"エラー: エンコードに失敗しました。({e})")
++        sys.exit(1)
++
++def print_usage():
++    print("使用方法:")
++    print("  1. ファイル名から時刻を解析 (デコード & 検証エンコード)")
++    print("     python3 x_convert.py [ファイル名]")
++    print("  2. エポックミリ秒からファイル名を生成 (エンコード)")
++    print("     python3 x_convert.py -e [エポックミリ秒]")
+
+-# テスト実行
+-epoch = x_90bit_decode("HMAAAAAAMAEtxeb")
+-x_90bit_encode(epoch)
++if __name__ == "__main__":
++    if len(sys.argv) == 2:
++        # 引数が1つの場合：ファイル名デコード
++        arg = sys.argv[1]
++        if arg in ("-h", "--help"):
++            print_usage()
++        else:
++            epoch = x_8char_decode(arg)
++            x_90bit_encode(epoch)
++
++    elif len(sys.argv) == 3 and sys.argv[1] == "-e":
++        # 引数が2つで -e の場合：エポックミリ秒からエンコード
++        x_90bit_encode(sys.argv[2])
++
++    else:
++        print_usage()
++        sys.exit(1)
+
