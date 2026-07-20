@@ -1,5 +1,6 @@
 import subprocess
 import os
+import io
 import time
 import requests
 import random
@@ -10,7 +11,8 @@ import sqlite3
 CORES = 8                                              # MPIで使用する物理コア数
 MIN_DIGITS = 3184                                      # 対象の最小桁数
 CM_ECPP_PATH = "/usr/local/cm-0.4.4/bin/ecpp-mpi"      # cm-ecppのコマンドパス
-DB_FILE = "factordb_tasks.db"                         # データベースファイル名
+DB_FILE = "factordb_tasks.db"                          # データベースファイル名
+AUTOLOAD_FILE = "autoload.txt"                         # あったら読み込むファイル
 # ===============
 
 # データベースの初期化
@@ -81,14 +83,14 @@ def get_single_prp(min_dig):
 # Factordbに証明結果をアップロードする
 def upload_proof(cert_content):
     url = "https://factordb.com/uploadcert.php"
-    payload = {'cert': cert_content}
+    payload = {'cert': ('proof.primo', io.StringIO(cert_content), 'text/plain')}
     session_id = os.environ.get("FDB_SESSION_ID")
     cookies = {'fdbuser': session_id} if session_id else {}
     if not session_id:
         print("[Warning] 環境変数 FDB_SESSION_ID が設定されていません。匿名として送信します。")
     
     try:
-        response = requests.post(url, data=payload, cookies=cookies, timeout=20)
+        response = requests.post(url, files=payload, cookies=cookies, timeout=20)
         if response.status_code == 200:
             print("[Success] factordbへのアップロードに成功しました。")
             return True
@@ -150,12 +152,36 @@ def main():
             else:
                 current_num = 5800
                 print(f"[Info] 履歴がありません。デフォルトの連番 {current_num} から開始します。")
-
+    
+    # ★ スキップしたい連番のセットを定義
+    SKIP_NUMBERS = {6062, 6242, 6267}
+    
     while True:
+        # ★ ここでチェック：もし現在の番号がスキップ対象なら、DBに記録してインクリメント
+        while current_num in SKIP_NUMBERS:
+            print(f"[Info] 連番 {current_num} は手動生成済みのためスキップします。")
+            save_task(current_num, "SKIPPED_MANUAL", MIN_DIGITS, 'completed', 0)
+            current_num += 1
+            # スキップした後は goto_calc を False に戻して新規ダウンロードさせる
+            goto_calc = False
         # 新しい数をダウンロードするフェーズ
+
         if not goto_calc:
-            print(f"\n--- {MIN_DIGITS}桁以上のPRPを1件取得中 (startランダム) ---")
-            prp = get_single_prp(MIN_DIGITS)
+            prp = None
+
+            if os.path.isfile(AUTOLOAD_FILE) and os.access(AUTOLOAD_FILE, os.R_OK):
+                print(f"ファイル{AUTOLOAD_FILE}を検知しました。")
+                with open(AUTOLOAD_FILE, encoding='utf-8') as f:
+                    line = f.readline()
+                    if line[0].isdigit():
+                        prp = line
+                        print(f"ファイル{AUTOLOAD_FILE}の読み込みに成功しました。")
+                print(f"ファイル{AUTOLOAD_FILE}を削除します。")
+                os.remove(AUTOLOAD_FILE)
+
+            if not prp:
+                print(f"\n--- {MIN_DIGITS}桁以上のPRPを1件取得中 (startランダム) ---")
+                prp = get_single_prp(MIN_DIGITS)
             
             if not prp:
                 print("対象のPRPが見つからないか、エラーが発生しました。30秒後に再試行します。")
@@ -202,7 +228,7 @@ def main():
             save_task(current_num, prp, digits, 'completed', elapsed)
             
             # CMの中間チェックポイントファイルを掃除（本家仕様通り、成功後は不要なため）
-            for suffix in [".cert1", ".cert2"]:
+            for suffix in [".cert1", ".cert2", ""]:
                 if os.path.exists(f"{output_file}{suffix}"):
                     os.remove(f"{output_file}{suffix}")
                 
