@@ -81,7 +81,7 @@ def get_latest_serial_num():
 # Factordbから1件だけPRPを取得する
 def get_single_prp(min_dig):
     random_start = random.randint(0, 20)
-    print(f"start={random_start}")
+    logger.debug(f"start={random_start}")
     url = f"https://factordb.com/listtype.php?t=1&mindig={min_dig}&perpage=1&start={random_start}&download=1"
     try:
         response = requests.get(url, timeout=10)
@@ -89,8 +89,8 @@ def get_single_prp(min_dig):
             lines = response.text.strip().split('\n')
             if lines and lines[0].isdigit():
                 return lines[0]
-    except Exception as e:
-        print(f"[Error] ダウンロード失敗: {e}")
+    except Exception:
+        logger.exception("ダウンロード失敗")
     return None
 
 
@@ -101,22 +101,30 @@ def upload_proof(cert_content):
     session_id = os.environ.get("FDB_SESSION_ID")
     cookies = {'fdbuser': session_id} if session_id else {}
     if not session_id:
-        print("[Warning] 環境変数 FDB_SESSION_ID が設定されていません。匿名として送信します。")
+        logger.warning("環境変数 FDB_SESSION_ID が設定されていません。匿名として送信します。")
 
     try:
         response = requests.post(url, files=payload, cookies=cookies, timeout=20)
         if response.status_code == 200:
-            print("[Success] factordbへのアップロードに成功しました。")
+            logger.info("factordbへのアップロードに成功しました。")
             return True
         else:
-            print(f"[Warning] アップロードのステータスコードが異常です: {response.status_code}")
-    except Exception as e:
-        print(f"[Error] アップロード失敗: {e}")
+            logger.warning(f"アップロードのステータスコードが異常です: {response.status_code}")
+    except Exception:
+        logger.exception("アップロード失敗")
     return False
 
 
 def main():
-    logger.basicConfig()
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=[
+            logging.StreamHandler(),               # コンソールに出力
+            logging.FileHandler("ecpp_task.log"),   # ファイルにも出力
+        ],
+    )
     init_db()
 
     tmp_dir = os.environ.get("CM_ECPP_TMPDIR")
@@ -125,18 +133,18 @@ def main():
             try:
                 # 中間ディレクトリも含めて一括作成 (mkdir -p と同じ)
                 os.makedirs(tmp_dir, exist_ok=True)
-                print(f"[Info] CM_ECPP_TMPDIR で指定されたディレクトリを作成しました: {tmp_dir}")
-            except Exception as e:
-                print(f"[Warning] ディレクトリ {tmp_dir} の作成に失敗しました: {e}")
+                logger.info(f"CM_ECPP_TMPDIR で指定されたディレクトリを作成しました: {tmp_dir}")
+            except Exception:
+                logger.warning(f"ディレクトリ {tmp_dir} の作成に失敗しました", exc_info=True)
         else:
-            print(f"[Info] CM_ECPP_TMPDIR ディレクトリは既に存在します: {tmp_dir}")
+            logger.info(f"CM_ECPP_TMPDIR ディレクトリは既に存在します: {tmp_dir}")
 
     # コマンドライン引数の解析
     parser = argparse.ArgumentParser(description="Factordb ECPP SQLite3 Automation Script")
     parser.add_argument('--start-num', type=int, help="新規開始時の連番。指定がない場合はDBの続きから自動再開します。")
     args = parser.parse_args()
 
-    print("Factordb ECPP 自動化タスク（SQLite3管理版）を開始します。")
+    logger.info("Factordb ECPP 自動化タスク（SQLite3管理版）を開始します。")
 
     # 1. まず前回中断されたタスク（status='running'）がないか確認
     interrupted = get_interrupted_task()
@@ -146,11 +154,13 @@ def main():
         # 中断タスクがあっても、それに対応するチェックポイントファイル(.cert1 / .cert2)があるか確認
         expected_prefix = f"{current_num}-cert{digits}"
         if os.path.exists(f"{expected_prefix}.cert1") or os.path.exists(f"{expected_prefix}.cert2"):
-            print(f"\n[★レジューム] 前回の未完了タスクをDBから復元しました。連番: {current_num} ({digits}桁)")
+            logger.info(f"[★レジューム] 前回の未完了タスクをDBから復元しました。連番: {current_num} ({digits}桁)")
             goto_calc = True
         else:
-            print(f"\n[Warning] DB上は連番 {current_num} が実行中ですが、CMのチェックポイントファイルが見つかりません。")
-            print("安全のため、この連番のステータスを 'failed' に変更して次へ進みます。")
+            logger.warning(
+                f"DB上は連番 {current_num} が実行中ですが、CMのチェックポイントファイルが見つかりません。"
+                "安全のため、この連番のステータスを 'failed' に変更して次へ進みます。"
+            )
             save_task(current_num, prp, digits, 'failed')
             goto_calc = False
     else:
@@ -164,10 +174,10 @@ def main():
             latest_db_num = get_latest_serial_num()
             if latest_db_num is not None:
                 current_num = latest_db_num + 1
-                print(f"[Info] DBの履歴から自動的に次の連番 {current_num} を選択しました。")
+                logger.info(f"DBの履歴から自動的に次の連番 {current_num} を選択しました。")
             else:
                 current_num = 5800
-                print(f"[Info] 履歴がありません。デフォルトの連番 {current_num} から開始します。")
+                logger.info(f"履歴がありません。デフォルトの連番 {current_num} から開始します。")
 
     # ★ スキップしたい連番のセットを定義
     SKIP_NUMBERS = {6062, 6242, 6267}
@@ -175,7 +185,7 @@ def main():
     while True:
         # ★ ここでチェック：もし現在の番号がスキップ対象なら、DBに記録してインクリメント
         while current_num in SKIP_NUMBERS:
-            print(f"[Info] 連番 {current_num} は手動生成済みのためスキップします。")
+            logger.info(f"連番 {current_num} は手動生成済みのためスキップします。")
             save_task(current_num, "SKIPPED_MANUAL", MIN_DIGITS, 'completed', 0)
             current_num += 1
             # スキップした後は goto_calc を False に戻して新規ダウンロードさせる
@@ -186,26 +196,25 @@ def main():
             prp = None
 
             if os.path.isfile(AUTOLOAD_FILE) and os.access(AUTOLOAD_FILE, os.R_OK):
-                print(f"ファイル{AUTOLOAD_FILE}を検知しました。")
+                logger.info(f"ファイル{AUTOLOAD_FILE}を検知しました。")
                 with open(AUTOLOAD_FILE, encoding='utf-8') as f:
                     line = f.readline().strip()
                     if line.isdigit():
                         prp = line
-                        print(f"ファイル{AUTOLOAD_FILE}の読み込みに成功しました。")
-                        print(f"ファイル{AUTOLOAD_FILE}を削除します。")
+                        logger.info(f"ファイル{AUTOLOAD_FILE}の読み込みに成功したので削除します。")
                         os.remove(AUTOLOAD_FILE)
 
             if not prp:
-                print(f"\n--- {MIN_DIGITS}桁以上のPRPを1件取得中 (startランダム) ---")
+                logger.info(f"--- {MIN_DIGITS}桁以上のPRPを1件取得中 (startランダム) ---")
                 prp = get_single_prp(MIN_DIGITS)
 
             if not prp:
-                print("対象のPRPが見つからないか、エラーが発生しました。30秒後に再試行します。")
+                logger.warning("対象のPRPが見つからないか、エラーが発生しました。30秒後に再試行します。")
                 time.sleep(30)
                 continue
 
             digits = len(prp)
-            print(f"ターゲットを取得しました（{digits} 桁）")
+            logger.info(f"ターゲットを取得しました（{digits} 桁）")
 
             # 計算開始前にステータスを 'running' としてDBに記録
             save_task(current_num, prp, digits, 'running')
@@ -222,13 +231,13 @@ def main():
             "-c", "-g", "-t", "-f", output_file, "-n", prp
         ]
 
-        print(f"ECPP-MPIを実行中... (ファイル名: {output_file}, コア数: {CORES})")
+        logger.info(f"ECPP-MPIを実行中... (ファイル名: {output_file}, コア数: {CORES})")
         start_time = time.time()
 
         result = subprocess.run(cmd, capture_output=True, text=True)
         elapsed = time.time() - start_time
 
-        print(f"計算終了。所要時間: {elapsed:.2f} 秒")
+        logger.info(f"計算終了。所要時間: {elapsed:.2f} 秒")
 
         # 証明書ファイル（.primo）の確認とアップロード
         cert_file = f"{output_file}.primo"
@@ -237,7 +246,7 @@ def main():
             with open(cert_file, "r") as f:
                 cert_content = f.read()
 
-            print("証明書を factordb に送信しています...")
+            logger.info("証明書を factordb に送信しています...")
             upload_proof(cert_content)
 
             # DBのステータスを 'completed'（完了）に更新し、かかった時間を記録
@@ -251,16 +260,16 @@ def main():
             # 次の連番へ
             current_num += 1
         else:
-            print(f"[Error] 証明書ファイル ({cert_file}) が生成されませんでした。")
+            logger.error(
+                f"証明書ファイル ({cert_file}) が生成されませんでした。\n"
+                f"--- STDOUT ---\n{result.stdout}\n"
+                f"--- STDERR ---\n{result.stderr}"
+            )
             # エラー時はDBのステータスを 'failed' にして、ループを抜けて終了します
             save_task(current_num, prp, digits, 'failed', elapsed)
-            print("--- STDOUT ---")
-            print(result.stdout)
-            print("--- STDERR ---")
-            print(result.stderr)
             break
 
-        print("次のタスクまで10秒待機します...")
+        logger.info("次のタスクまで10秒待機します...")
         time.sleep(10)
 
 
