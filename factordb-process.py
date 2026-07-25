@@ -116,8 +116,19 @@ def upload_proof(cert_content):
 
 
 def main():
+    # コマンドライン引数の解析
+    parser = argparse.ArgumentParser(description="Factordb ECPP SQLite3 Automation Script")
+    parser.add_argument('--start-num', type=int, help="新規開始時の連番。指定がない場合はDBの続きから自動再開します。")
+    parser.add_argument(
+        '--log-level',
+        default='INFO',
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+        help="ログの出力レベル。デフォルトはINFO。詳細調査時はDEBUGを指定してください。",
+    )
+    args = parser.parse_args()
+
     logging.basicConfig(
-        level=logging.INFO,
+        level=getattr(logging, args.log_level),
         format="%(asctime)s [%(levelname)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[
@@ -138,11 +149,6 @@ def main():
                 logger.warning(f"ディレクトリ {tmp_dir} の作成に失敗しました", exc_info=True)
         else:
             logger.info(f"CM_ECPP_TMPDIR ディレクトリは既に存在します: {tmp_dir}")
-
-    # コマンドライン引数の解析
-    parser = argparse.ArgumentParser(description="Factordb ECPP SQLite3 Automation Script")
-    parser.add_argument('--start-num', type=int, help="新規開始時の連番。指定がない場合はDBの続きから自動再開します。")
-    args = parser.parse_args()
 
     logger.info("Factordb ECPP 自動化タスク（SQLite3管理版）を開始します。")
 
