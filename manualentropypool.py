@@ -5,7 +5,8 @@ import os
 class ManualEntropyPool:
     def __init__(self, pool_path="entropy_pool.bin"):
         self.pool_path = pool_path
-        self.pool_size = 32  # 256ビット (32バイト)
+        # プールの内部状態は512ビット（64バイト）に拡張
+        self.pool_size = 64
         self._load_pool()
 
     def _load_pool(self):
@@ -14,7 +15,6 @@ class ManualEntropyPool:
             with open(self.pool_path, "rb") as f:
                 self.state = f.read()
         else:
-            # 初回のみ、空だとハッシュの安全性が低いためOSの乱数で基礎を作る
             self.state = os.urandom(self.pool_size)
             self._save_pool()
 
@@ -49,16 +49,15 @@ class ManualEntropyPool:
         return len(digits)
 
     def extract_key(self):
-        """プールから安全な256ビット乱数を取り出し、プールを自己更新する"""
-        # 1. 現在のプール状態から鍵を生成（役割を分離するためソルトを付与）
+        """プールから、現代の標準である『安全な256ビット乱数』を切り出す"""
+        # 1. 512ビットの内部状態から、256ビットの鍵を安全に抽出（HKDFなどの簡易思想）
         key_hasher = hashlib.sha256()
         key_hasher.update(self.state)
         key_hasher.update(b"EXTRACT_KEY")
-        extracted_key = key_hasher.digest()
+        extracted_key = key_hasher.digest()  # ここで256ビット（32バイト）を出力
 
-        # 2. 【前方向セキュリティ】プールを次の状態へ不可逆更新
-        # これにより、この後にプールが盗まれても、今出力した鍵は逆算できない
-        next_hasher = hashlib.sha256()
+        # 2. 内部状態（512ビット）を自己更新
+        next_hasher = hashlib.sha512()
         next_hasher.update(self.state)
         next_hasher.update(b"NEXT_STATE")
         self.state = next_hasher.digest()
