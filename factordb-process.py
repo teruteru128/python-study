@@ -275,8 +275,9 @@ def main():
             save_task(current_num, prp, digits, 'failed', elapsed)
             break
 
-        logger.info("次のタスクまで10秒待機します...")
-        time.sleep(10)
+        # logger.info("次のタスクまで10秒待機します...")
+        # time.sleep(10)
+        break
 
 
 if __name__ == "__main__":
