@@ -11,7 +11,7 @@ import logging
 
 # === 設定項目 ===
 CORES = 8                                              # MPIで使用する物理コア数
-MIN_DIGITS = 3184                                      # 対象の最小桁数
+MIN_DIGITS = 3200                                      # 対象の最小桁数
 CM_ECPP_PATH = "/usr/local/cm-0.4.4/bin/ecpp-mpi"      # cm-ecppのコマンドパス
 DB_FILE = "factordb_tasks.db"                          # データベースファイル名
 AUTOLOAD_FILE = "autoload.txt"                         # あったら読み込むファイル
@@ -157,14 +157,33 @@ def main():
 
     if interrupted:
         current_num, prp, digits = interrupted
-        # 中断タスクがあっても、それに対応するチェックポイントファイル(.cert1 / .cert2)があるか確認
+        # 中断タスクがあっても、それに対応するチェックポイントファイル(.cert1 / .cert2)が
+        # 中身を伴って存在するか確認する。存在するだけで中身が空のものを渡すとCMは
+        # 数秒で何もせず終了し、.primoが生成されないまま'failed'になる(2026-09-20の6210)。
         expected_prefix = f"{current_num}-cert{digits}"
-        if os.path.exists(f"{expected_prefix}.cert1") or os.path.exists(f"{expected_prefix}.cert2"):
-            logger.info(f"[★レジューム] 前回の未完了タスクをDBから復元しました。連番: {current_num} ({digits}桁)")
+        usable_checkpoint = next(
+            (f"{expected_prefix}{suffix}" for suffix in (".cert2", ".cert1")
+             if os.path.exists(f"{expected_prefix}{suffix}")
+             and os.path.getsize(f"{expected_prefix}{suffix}") > 0),
+            None,
+        )
+        if usable_checkpoint:
+            logger.info(
+                f"[★レジューム] 前回の未完了タスクをDBから復元しました。連番: {current_num} ({digits}桁) "
+                f"チェックポイント: {usable_checkpoint} "
+                f"({os.path.getsize(usable_checkpoint):,} バイト)"
+            )
             goto_calc = True
         else:
+            # 空のチェックポイントが残っているとCMが即死するので、消してから次へ進む
+            for suffix in (".cert1", ".cert2"):
+                stale = f"{expected_prefix}{suffix}"
+                if os.path.exists(stale) and os.path.getsize(stale) == 0:
+                    logger.warning(f"空のチェックポイント {stale} を削除します。")
+                    os.remove(stale)
             logger.warning(
-                f"DB上は連番 {current_num} が実行中ですが、CMのチェックポイントファイルが見つかりません。"
+                f"DB上は連番 {current_num} が実行中ですが、使えるCMのチェックポイントファイルが"
+                "見つかりません(存在しないか、中身が空)。"
                 "安全のため、この連番のステータスを 'failed' に変更して次へ進みます。"
             )
             save_task(current_num, prp, digits, 'failed')
@@ -231,6 +250,7 @@ def main():
         # 出力ファイル名
         output_file = f"{current_num}-cert{digits}"
 
+        # perf record -g --
         # CM (MPI版) の実行
         cmd = [
             "mpirun", "-np", str(CORES), CM_ECPP_PATH,
