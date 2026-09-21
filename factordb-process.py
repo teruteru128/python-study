@@ -10,7 +10,7 @@ import sqlite3
 import logging
 
 # === 設定項目 ===
-CORES = 8                                              # MPIで使用する物理コア数
+DEFAULT_CORES = 8                                      # MPIで使用する物理コア数(--coresで上書き可能)
 MIN_DIGITS = 3200                                      # 対象の最小桁数
 CM_ECPP_PATH = "/usr/local/cm-0.4.4/bin/ecpp-mpi"      # cm-ecppのコマンドパス
 DB_FILE = "factordb_tasks.db"                          # データベースファイル名
@@ -120,12 +120,22 @@ def main():
     parser = argparse.ArgumentParser(description="Factordb ECPP SQLite3 Automation Script")
     parser.add_argument('--start-num', type=int, help="新規開始時の連番。指定がない場合はDBの続きから自動再開します。")
     parser.add_argument(
+        '--cores',
+        type=int,
+        default=DEFAULT_CORES,
+        help=f"mpirunに渡すプロセス数。既定は{DEFAULT_CORES}。"
+             "素数探索など他の計算と同時に回すときに絞る用途を想定している。",
+    )
+    parser.add_argument(
         '--log-level',
         default='INFO',
         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
         help="ログの出力レベル。デフォルトはINFO。詳細調査時はDEBUGを指定してください。",
     )
     args = parser.parse_args()
+
+    if args.cores < 1:
+        parser.error(f"--cores は1以上を指定してください: {args.cores}")
 
     logging.basicConfig(
         level=getattr(logging, args.log_level),
@@ -253,11 +263,11 @@ def main():
         # perf record -g --
         # CM (MPI版) の実行
         cmd = [
-            "mpirun", "-np", str(CORES), CM_ECPP_PATH,
+            "mpirun", "-np", str(args.cores), CM_ECPP_PATH,
             "-c", "-g", "-t", "-f", output_file, "-n", prp
         ]
 
-        logger.info(f"ECPP-MPIを実行中... (ファイル名: {output_file}, コア数: {CORES})")
+        logger.info(f"ECPP-MPIを実行中... (ファイル名: {output_file}, コア数: {args.cores})")
         start_time = time.time()
 
         result = subprocess.run(cmd, capture_output=True, text=True)
