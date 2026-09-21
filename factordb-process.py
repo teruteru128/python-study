@@ -127,6 +127,11 @@ def main():
              "素数探索など他の計算と同時に回すときに絞る用途を想定している。",
     )
     parser.add_argument(
+        '--once',
+        action='store_true',
+        help="1件処理したら終了する。指定しない場合は連続して次の連番へ進む。",
+    )
+    parser.add_argument(
         '--log-level',
         default='INFO',
         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
@@ -295,6 +300,10 @@ def main():
 
             # 次の連番へ
             current_num += 1
+
+            if args.once:
+                logger.info("--once が指定されているため、1件処理して終了します。")
+                break
         else:
             logger.error(
                 f"証明書ファイル ({cert_file}) が生成されませんでした。\n"
@@ -305,9 +314,8 @@ def main():
             save_task(current_num, prp, digits, 'failed', elapsed)
             break
 
-        # logger.info("次のタスクまで10秒待機します...")
-        # time.sleep(10)
-        break
+        logger.info("次のタスクまで10秒待機します...")
+        time.sleep(10)
 
 
 if __name__ == "__main__":
