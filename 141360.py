@@ -1,6 +1,8 @@
 import sys
 from sympy import cyclotomic_poly, Symbol
 
+# PRP (6^141360-1)*6-1 を円分多項式を用いてなんかしようとした残骸。
+
 sys.set_int_max_str_digits(100000)
 
 # 指数と底数の設定
@@ -19,20 +21,19 @@ print(f"計算を開始します。全 {len(divisors)} 個のパーツをファ�
 with open("factordb_inputs.txt", "w") as f:
     # 最初に共通因数の「6」を書き出す
     f.write(f"{base}\n")
-    
+
     # 80個のパーツを順に計算して書き出し
     for i, d in enumerate(divisors, 1):
         print(f"計算中... {i:2d}/80 (約数: {d:6d})")
-        
+
         # 円分多項式 Φ_d(x) を取得
         poly = cyclotomic_poly(d, x)
-        
+
         # 【修正箇所】 .eval() ではなく .subs(x, base) で値を代入
         val = poly.subs(x, base)
-        
+
         # ファイルに保存
         f.write(f"{val}\n")
 
 print("\nすべての計算が完了しました！")
 print("プロジェクトフォルダ内に 'factordb_inputs.txt' が作成されています。")
-

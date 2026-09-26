@@ -32,7 +32,8 @@ def rotate_and_crop_key_data(image_path, output_path):
     max_variance = 0
 
     for angle in angles:
-        rotated_thresh = rotate(thresh, angle, order=0, mode="constant", cval=0)
+        rotated_thresh = rotate(thresh, angle, order=0,
+                                mode="constant", cval=0)
         row_sums = np.sum(rotated_thresh, axis=1)
         variance = np.var(row_sums)
         if variance > max_variance:
@@ -81,4 +82,3 @@ try:
     rotate_and_crop_key_data(input_file, output_file)
 except Exception as e:
     print(f"エラーが発生しました: {e}")
-

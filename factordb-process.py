@@ -11,7 +11,7 @@ import logging
 
 # === 設定項目 ===
 DEFAULT_CORES = 8                                      # MPIで使用する物理コア数(--coresで上書き可能)
-MIN_DIGITS = 3200                                      # 対象の最小桁数
+MIN_DIGITS = 300                                       # 対象の最小桁数
 CM_ECPP_PATH = "/usr/local/cm-0.4.4/bin/ecpp-mpi"      # cm-ecppのコマンドパス
 DB_FILE = "factordb_tasks.db"                          # データベースファイル名
 AUTOLOAD_FILE = "autoload.txt"                         # あったら読み込むファイル
